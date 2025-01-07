@@ -1,0 +1,20 @@
+# 编译生成的文件
+*.o
+crymail
+
+# 配置文件
+mail.conf
+
+# 密钥文件
+*.pem
+*.key
+*.bin
+
+# 临时文件
+temp_*
+
+# IDE和编辑器文件
+.vscode/
+.idea/
+*.swp
+*~ 
