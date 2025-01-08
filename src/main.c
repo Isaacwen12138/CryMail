@@ -49,6 +49,18 @@ int configure_mail() {
     fgets(buffer, sizeof(buffer), stdin);
     config.use_ssl = atoi(buffer);
 
+    printf("请输入pop3服务器地址：");
+    fgets(buffer, sizeof(buffer), stdin);
+    config.pop3_server = strdup(buffer);
+
+    printf("请输入pop3端口号：");
+    fgets(buffer, sizeof(buffer), stdin);
+    config.pop3_port = atoi(buffer);
+
+    printf("pop3服务器是否使用SSL?：(1=是,2=否)");
+    fgets(buffer, sizeof(buffer), stdin);
+    config.pop3_use_ssl = atoi(buffer);
+
     return save_mail_config(&config, CONFIG_FILE);
 }
 
@@ -187,7 +199,7 @@ int main(int argc, char *argv[]) {
             .body = argv[4],
             .signature_file = "temp_signature.bin"
         };
-
+        
         // 发送邮件
         if (send_signed_mail(&config, &content)) {
             printf("签名邮件发送成功！\n");
@@ -199,6 +211,31 @@ int main(int argc, char *argv[]) {
         // 清理
         remove("temp_signature.bin");
         mail_cleanup();
+    }
+    else if(strcmp(argv[1],"-l")==0){
+         mail_init();
+
+         printf("test\n");
+
+        // 加载邮件配置
+        mail_config_t config;
+        if (!load_mail_config(&config, CONFIG_FILE)) {
+            printf("无法加载邮件配置，请先运行 -c 选项配置邮件\n");
+            return 1;
+        }
+        mail_list_t* list = receive_mail_list(&config);
+
+        if (list->items == NULL && list->count > 0) {
+            printf("邮件列表项数据为空\n");
+            free(list);
+            return 1;
+        }
+        for(int i = 0;i < list->count;i++)
+        {
+           printf("Email #%zu: Date:%s  From:%s Subject: %s\n", i,list->items[i].date,list->items[i].from, list->items[i].subject);
+        }
+        printf("请给出你想阅读的邮件序号(1-8,输入0则退出)：");
+        
     }
     else {
         print_usage();
