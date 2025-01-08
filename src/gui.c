@@ -151,6 +151,13 @@ static void show_receive_page() {
     clear_screen();
     printf("=== 接收邮件 ===\n\n");
     printf("正在实现中...\n\n");
+    mail_config_t config;
+    if (!load_mail_config(&config, "mail.conf")) {
+        printf("\n无法加载邮件配置！按回车返回主菜单...");
+        getchar();
+        return;
+    }
+    receive_mail_list(&config);
     printf("按回车返回主菜单...");
     getchar();
 }

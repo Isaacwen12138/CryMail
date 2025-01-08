@@ -128,9 +128,14 @@ int send_signed_mail(const mail_config_t* config, const mail_content_t* content)
     curl_easy_setopt(curl, CURLOPT_READFUNCTION, payload_source);
     curl_easy_setopt(curl, CURLOPT_READDATA, &upload_ctx);
     curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
-
+ 
     // 发送邮件
     CURLcode res = curl_easy_perform(curl);
+
+    if (res != CURLE_OK) {
+        fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+    }
+
 
     // 清理
     curl_slist_free_all(recipients);

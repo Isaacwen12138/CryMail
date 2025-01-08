@@ -32,6 +32,7 @@ typedef struct {
     char* subject;
     char* date;
     int has_signature;  // 是否包含数字签名
+    char* body;
 } mail_item_t;
 
 // 邮件列表结构体
