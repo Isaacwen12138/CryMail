@@ -108,6 +108,15 @@ void parse_mail_list(mail_list_t* list, const char* data, int index) {
         item->subject = strdup("No Subject");
     }
 
+    const char* body_start_tag = "\r\n\r\n"; // 假设邮件头和邮件体之间用一个空行分隔
+    char* body_start = strstr(data, body_start_tag);
+    if (body_start) {
+        body_start += strlen(body_start_tag); // 跳过空行
+        item->body = strdup(body_start); // 复制到body
+    } else {
+        item->body = strdup("No Body");
+    }
+
     // 解析附件, 查找signature.bin
     const char* signature_tag = "Content-Disposition: attachment; filename=\"signature.bin\"";
     item->has_signature = strstr(data, signature_tag) ? 1 : 0;
