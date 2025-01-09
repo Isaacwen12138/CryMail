@@ -19,6 +19,7 @@ void print_usage() {
     printf("4. 验证签名: ./crymail -v <消息> <签名文件>\n");
     printf("5. 配置邮件: ./crymail -c\n");
     printf("6. 发送签名邮件: ./crymail -m <收件人> <主题> <消息>\n");
+    printf("7. 接收邮件: ./crymail -l\n");
 }
 
 // 配置邮件设置
@@ -215,7 +216,7 @@ int main(int argc, char *argv[]) {
     else if(strcmp(argv[1],"-l")==0){
          mail_init();
 
-         printf("test\n");
+        // printf("test\n");
 
         // 加载邮件配置
         mail_config_t config;

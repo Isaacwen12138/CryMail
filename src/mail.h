@@ -73,4 +73,7 @@ int save_mail_config(const mail_config_t* config, const char* config_file);
 // 加载邮件配置
 int load_mail_config(mail_config_t* config, const char* config_file);
 
+// 解析邮件
+int parse_mail(const mail_config_t* config, int mail_index);
+
 #endif // MAIL_H 

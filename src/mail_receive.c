@@ -1,4 +1,5 @@
 #include "mail.h"
+#include "base64.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -227,6 +228,7 @@ static mail_content_t* parse_mail_content(const char* data) {
     return content;
 }
 
+#define MAX_MAIL_COUNT 32
 mail_list_t* receive_mail_list(const mail_config_t* config) {
     CURL* curl;
     CURLcode res;
@@ -234,7 +236,7 @@ mail_list_t* receive_mail_list(const mail_config_t* config) {
     list->count = 0;
     list->items = NULL; // 初始化为空
 
-    for (size_t i = 1; i <= 8; ++i) {
+    for (size_t i = 1; i <= MAX_MAIL_COUNT; ++i) {  // 假设只获取2封邮件，你可以根据需要修改这个数字
         curl = curl_easy_init();
         if (!curl) {
             printf("CURL init failed!\n");
@@ -268,29 +270,72 @@ mail_list_t* receive_mail_list(const mail_config_t* config) {
             break;
         }
 
-        // printf("%s\n",ctx.data);
-        parse_mail_list(list,ctx.data, i - 1);
-        printf("Date:%s Email #%zu: From:%s Subject: %s has_signature:%d body:%s\n", list->items[i-1].date,i,list->items[i-1].from, list->items[i - 1].subject,list->items[i-1].has_signature,list->items[i-1].body);
+        parse_mail_list(list, ctx.data, i - 1);
+        printf("[Email #%zu] Date: %s From: %s Subject: %s has_signature: %d\n", 
+               i, list->items[i - 1].date, list->items[i - 1].from, 
+               list->items[i - 1].subject, list->items[i - 1].has_signature);
 
         free(ctx.data);
     }
-    printf("请给出你想阅读的邮件序号(1-8,输入0则退出)：");
+
+    // 提供用户选择邮件查看
+    printf("\n请给出你想阅读的邮件序号(1-%zu, 输入0则退出)：", list->count);
     int mail_num;
-    scanf("%d",&mail_num);
-    if(mail_num == 0)
-    {
-        return 1;
-    }
-    else if(mail_num>=1&&mail_num<=8)
-    {
-        printf("Email #%zu: Date:%s  From:%s Subject: %s\ncontent:%s\nsignature:%s\n",mail_num,list->items[mail_num-1].date,list->items[mail_num-1].from, list->items[mail_num-1].subject,list->items[mail_num-1].body,list->items[mail_num-1].signature_file);
-        if(list->items[mail_num-1].has_signature)
-        {
-            if(!verify_signature(list->items[mail_num-1].body,list->items[mail_num-1].signature_file,list->items[mail_num-1].signature_file_len,"public.pem"))
-                printf("签名验证失败！消息可能被篡改。\n");
+    scanf("%d", &mail_num);
+
+    if (mail_num == 0) {
+        return list;
+    } else if (mail_num >= 1 && mail_num <= list->count) {
+        // 显示所选邮件的详细信息
+        printf("Email #%u: Date: %s From: %s Subject: %s\n", 
+               mail_num, 
+               list->items[mail_num - 1].date, 
+               list->items[mail_num - 1].from, 
+               list->items[mail_num - 1].subject);
+        if (list->items[mail_num - 1].has_signature) {
+        printf("Content: %s\n", list->items[mail_num - 1].body);
+       
+        if (list->items[mail_num - 1].has_signature) {
+            printf("Signature: %s\n", list->items[mail_num - 1].signature_file);
+            
+            // Base64解码签名并进行验证
+            size_t decoded_len = 0;
+            long sig_size = strlen(list->items[mail_num - 1].signature_file);
+            unsigned char* decoded_signature = malloc(sig_size * 2);  // 预留足够的空间
+
+            // 调用 base64_decode 函数解码签名
+            int ret = base64_decode(list->items[mail_num - 1].signature_file, 
+                                    strlen(list->items[mail_num - 1].signature_file), 
+                                    decoded_signature, &decoded_len);
+
+            if (ret != 1) {
+                printf("签名Base64解码失败！错误代码：%d\n", ret);
+            } 
+            else {
+                // 打印解码后的签名（调试用）
+                printf("Decoded signature: ");
+                for (size_t i = 0; i < decoded_len; ++i) {
+                    printf("%02x", decoded_signature[i]);  // 以十六进制输出解码后的签名
+                }
+                printf("\n");
+
+                    if (!verify_signature(list->items[mail_num - 1].body, 
+                                        decoded_signature, 
+                                        decoded_len, 
+                                        "public.pem")) {
+                        printf("签名验证失败！消息可能被篡改。\n");
+                    }
+                    else {
+                        printf("验签成功！消息真实\n");
+                    }
+                }
+                free(decoded_signature);  // 释放解码后的签名内存
+            }
+        }
+        else {
+            printf("没有签名,不进行验签\n");
         }
     }
-
     return list;
 }
 
@@ -349,4 +394,52 @@ void free_mail_content(mail_content_t* content) {
     if (content->signature_file)
         free((void*)content->signature_file);
     free(content);
+}
+
+// 解析特定邮件
+int parse_mail(const mail_config_t* config, int mail_index) {
+    // 假设邮件列表已经获取
+    mail_list_t* list = receive_mail_list(config);
+    if (!list || mail_index < 1 || mail_index > list->count) {
+        printf("无效的邮件编号！\n");
+        return 0;
+    }
+
+    // 获取邮件数据
+    receive_ctx_t ctx = { NULL, 0 };
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        printf("CURL init failed!\n");
+        return 0;
+    }
+
+    char url[256];
+    snprintf(url, sizeof(url), "%s://%s:%d/%d",
+             config->pop3_use_ssl ? "pop3s" : "pop3",
+             config->pop3_server, config->pop3_port, mail_index);
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_USERNAME, config->username);
+    curl_easy_setopt(curl, CURLOPT_PASSWORD, config->password);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
+
+    CURLcode res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+        printf("curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+        curl_easy_cleanup(curl);
+        free(ctx.data);
+        free_mail_list(list);
+        return 0;
+    } else {
+        // 解析邮件内容
+        mail_content_t* content = parse_mail_content(ctx.data);
+        printf("邮件内容: %s\n", content->body);
+        free_mail_content(content);
+    }
+
+    curl_easy_cleanup(curl);
+    free(ctx.data);
+    free_mail_list(list);
+    return 1;
 } 

@@ -1,4 +1,5 @@
 #include "gui.h"
+#include "mail.h"
 #include "crypto.h"
 #include <string.h>
 #include <stdio.h>
@@ -28,14 +29,25 @@ static void show_config_page() {
     clear_screen();
     printf("=== 邮件配置 ===\n\n");
     
-    printf("SMTP服务器 [%s]: ", gui_config.smtp_server);
+    printf("SMTP服务器 [smtp.126.com]: ");
     char input[256];
     fgets(input, sizeof(input), stdin);
     input[strcspn(input, "\n")] = 0;
     if (strlen(input) > 0) {
         strncpy(gui_config.smtp_server, input, sizeof(gui_config.smtp_server)-1);
+    } else {
+        strncpy(gui_config.smtp_server, "smtp.126.com", sizeof(gui_config.smtp_server)-1);
     }
     
+    printf("POP3服务器 [pop.126.com]: ");
+    fgets(input, sizeof(input), stdin);
+    input[strcspn(input, "\n")] = 0;
+    if (strlen(input) > 0) {
+        strncpy(gui_config.pop3_server, input, sizeof(gui_config.pop3_server)-1);
+    } else {
+        strncpy(gui_config.pop3_server, "pop.126.com", sizeof(gui_config.pop3_server)-1);
+    }
+
     printf("用户名 [%s]: ", gui_config.username);
     fgets(input, sizeof(input), stdin);
     input[strcspn(input, "\n")] = 0;
@@ -43,33 +55,48 @@ static void show_config_page() {
         strncpy(gui_config.username, input, sizeof(gui_config.username)-1);
     }
     
-    printf("密码 [%s]: ", gui_config.password);
+    printf("授权码: ");
     fgets(input, sizeof(input), stdin);
     input[strcspn(input, "\n")] = 0;
     if (strlen(input) > 0) {
         strncpy(gui_config.password, input, sizeof(gui_config.password)-1);
     }
     
-    printf("端口 [%s]: ", gui_config.port);
+    printf("SMTP端口 [465]: ");
     fgets(input, sizeof(input), stdin);
     input[strcspn(input, "\n")] = 0;
     if (strlen(input) > 0) {
         strncpy(gui_config.port, input, sizeof(gui_config.port)-1);
+    } else {
+        strncpy(gui_config.port, "465", sizeof(gui_config.port)-1);
+    }
+
+    printf("POP3端口 [995]: ");
+    fgets(input, sizeof(input), stdin);
+    input[strcspn(input, "\n")] = 0;
+    if (strlen(input) > 0) {
+        strncpy(gui_config.pop3_port, input, sizeof(gui_config.pop3_port)-1);
+    } else {
+        strncpy(gui_config.pop3_port, "995", sizeof(gui_config.pop3_port)-1);
     }
     
-    printf("使用SSL (1=是, 0=否) [%d]: ", gui_config.use_ssl);
+    printf("使用SSL (1=是, 0=否) [1]: ");
     fgets(input, sizeof(input), stdin);
     input[strcspn(input, "\n")] = 0;
     if (strlen(input) > 0) {
         gui_config.use_ssl = atoi(input);
+    } else {
+        gui_config.use_ssl = 1;
     }
     
     // 保存配置
     mail_config_t config;
     config.smtp_server = gui_config.smtp_server;
+    config.pop3_server = gui_config.pop3_server;
     config.username = gui_config.username;
     config.password = gui_config.password;
     config.port = atoi(gui_config.port);
+    config.pop3_port = atoi(gui_config.pop3_port);
     config.use_ssl = gui_config.use_ssl;
     
     if (save_mail_config(&config, "mail.conf")) {
@@ -93,13 +120,22 @@ static void show_send_page() {
     fgets(gui_config.subject, sizeof(gui_config.subject), stdin);
     gui_config.subject[strcspn(gui_config.subject, "\n")] = 0;
     
-    printf("内容 (输入单独的一行.结束):\n");
+    printf("内容 (摁两下回车结束):\n");
     char line[1024];
     gui_config.message[0] = '\0';
-    while (fgets(line, sizeof(line), stdin)) {
-        if (strcmp(line, ".\n") == 0) break;
-        strncat(gui_config.message, line, sizeof(gui_config.message)-strlen(gui_config.message)-1);
+    // 需要摁两个回车
+    while (1) {
+        // 使用scanf读取一行输入，直到遇到换行符
+        if (scanf("%[^\n]%*c", line) != 1) {
+            break;  // 读取失败时退出
+        }
+
+        if (strcmp(line, ".") == 0) break;  // 判断是否为结束符 "."
+        
+        strncat(gui_config.message, line, sizeof(gui_config.message) - strlen(gui_config.message) - 1);
     }
+
+    printf("输入结束: %s\n", gui_config.message);
     
     // 发送邮件
     mail_config_t config;
@@ -150,7 +186,6 @@ static void show_send_page() {
 static void show_receive_page() {
     clear_screen();
     printf("=== 接收邮件 ===\n\n");
-    printf("正在实现中...\n\n");
     mail_config_t config;
     if (!load_mail_config(&config, "mail.conf")) {
         printf("\n无法加载邮件配置！按回车返回主菜单...");
@@ -158,6 +193,11 @@ static void show_receive_page() {
         return;
     }
     receive_mail_list(&config);
+    printf("请输入要解析的邮件编号: ");
+    char choice[10];
+    fgets(choice, sizeof(choice), stdin);
+    int mail_index = atoi(choice);
+    parse_mail(&config, mail_index);
     printf("按回车返回主菜单...");
     getchar();
 }
