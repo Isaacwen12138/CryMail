@@ -1,14 +1,42 @@
 #include "mail.h"
+#include "base64.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <curl/curl.h>
+#include "crypto.h"
 
 // 用于存储接收到的数据的结构体
 typedef struct {
     char* data;
     size_t size;
 } receive_ctx_t;
+
+void trim_body(char** body) {
+    if (*body == NULL) {
+        return;
+    }
+
+    // 移动指针移去前导空行和横杠
+    char* start = *body;
+    while (*start) {
+        if (*start == '\n' || *start == '\r' || *start == '-') {
+            start++;
+        } else {
+            break;
+        }
+    }
+
+    // 去除尾部空行和横杠
+    char* end = start + strlen(start) - 1;
+    while (end > start && (*end == '\n' || *end == '\r' || *end == '-')) {
+        end--;
+    }
+    *(end + 1) = '\0';
+
+    // 更新 body 指向去掉多余空行和分隔符的内容
+    *body = strdup(start);
+}
 
 // libcurl写入回调函数
 static size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -51,6 +79,15 @@ void parse_mail_list(mail_list_t* list, const char* data, int index) {
 
     // 指向当前解析的邮件项
     mail_item_t* item = &list->items[index];
+    
+    item->uid = NULL;
+    item->from = NULL;
+    item->subject = NULL;
+    item->date = NULL;
+    item->has_signature = 0;
+    item->body = NULL;
+    item->signature_file = NULL;
+    item->signature_file_len = 0;
 
     // 解析 UID
     const char* uid_tag = "\nMessage-ID: ";
@@ -108,18 +145,72 @@ void parse_mail_list(mail_list_t* list, const char* data, int index) {
         item->subject = strdup("No Subject");
     }
 
-    const char* body_start_tag = "\r\n\r\n"; // 假设邮件头和邮件体之间用一个空行分隔
-    char* body_start = strstr(data, body_start_tag);
+    const char* body_start = strstr(data, "\r\n\r\n");
     if (body_start) {
-        body_start += strlen(body_start_tag); // 跳过空行
-        item->body = strdup(body_start); // 复制到body
+        body_start += strlen("\r\n\r\n");
     } else {
-        item->body = strdup("No Body");
+        body_start = data;
     }
 
-    // 解析附件, 查找signature.bin
-    const char* signature_tag = "Content-Disposition: attachment; filename=\"signature.bin\"";
-    item->has_signature = strstr(data, signature_tag) ? 1 : 0;
+    const char* boundary_tag_start = strstr(data, "Content-Type: multipart/mixed; boundary=");
+    if (boundary_tag_start != NULL) {
+        boundary_tag_start += strlen("Content-Type: multipart/mixed; boundary=");
+        char boundary[256];
+        sscanf(boundary_tag_start, "\"%255[^\"]\"", boundary);
+
+        char delimiter[256];
+        snprintf(delimiter, sizeof(delimiter), "--%s", boundary);
+
+        char* part_start = strstr(body_start, delimiter);
+        while (part_start) {
+            part_start += strlen(delimiter);
+            if (strncmp(part_start, "--", 2) == 0) {
+                break;
+            }
+
+            const char* text_start_tag = "Content-Type: text/plain;";
+            if ((part_start = strstr(part_start, text_start_tag)) != NULL) {
+                part_start = strstr(part_start, "\r\n\r\n");
+                if (part_start) {
+                    part_start += strlen("\r\n\r\n");
+                    char* next_part_start = strstr(part_start, delimiter);
+                    size_t part_length = next_part_start ? (next_part_start - part_start) : strlen(part_start);
+                    item->body = malloc(part_length + 1);
+                    strncpy(item->body, part_start, part_length);
+                    item->body[part_length] = '\0';
+
+                    trim_body(&item->body);
+                }
+            }
+
+            const char* signature_tag = "Content-Disposition: attachment; filename=\"signature.bin\"\r\n\r\n";
+            if ((part_start = strstr(part_start, signature_tag)) != NULL) {
+                item->has_signature = 1;
+                const char* signature_start = part_start + strlen(signature_tag);
+                char* next_part_start = strstr(signature_start, delimiter);
+                size_t signature_len = next_part_start ? (next_part_start - signature_start) : strlen(signature_start);
+
+                // 去除末尾的空行和横杠
+                char* signature_end = (char *)(signature_start + signature_len - 1);
+                while (signature_end > signature_start && (*signature_end == '\n' || *signature_end == '\r' || *signature_end == '-' || *signature_end == ' ')) {
+                    signature_end--;
+                }
+                *(signature_end + 1) = '\0';
+
+                item->signature_file = strdup(signature_start);
+                item->signature_file_len = strlen(item->signature_file);
+            }
+
+            part_start = strstr(part_start, delimiter);
+        }
+    } else {
+        if (body_start) {
+            item->body = strdup(body_start);
+            trim_body(&item->body);
+        } else {
+            item->body = strdup("No Body");
+        }
+    }
 }
 
 // 解析邮件内容
@@ -137,6 +228,7 @@ static mail_content_t* parse_mail_content(const char* data) {
     return content;
 }
 
+#define MAX_MAIL_COUNT 32
 mail_list_t* receive_mail_list(const mail_config_t* config) {
     CURL* curl;
     CURLcode res;
@@ -144,7 +236,7 @@ mail_list_t* receive_mail_list(const mail_config_t* config) {
     list->count = 0;
     list->items = NULL; // 初始化为空
 
-    for (size_t i = 1; i <= 8; ++i) {
+    for (size_t i = 1; i <= MAX_MAIL_COUNT; ++i) {  // 假设只获取2封邮件，你可以根据需要修改这个数字
         curl = curl_easy_init();
         if (!curl) {
             printf("CURL init failed!\n");
@@ -173,17 +265,77 @@ mail_list_t* receive_mail_list(const mail_config_t* config) {
         curl_easy_cleanup(curl);
 
         if (res != CURLE_OK) {
-            printf("Failed to retrieve email %zu: %s\n", i, curl_easy_strerror(res));
+            // printf("Failed to retrieve email %zu: %s\n", i, curl_easy_strerror(res));
             free(ctx.data);
-            continue;
+            break;
         }
 
-        parse_mail_list(list,ctx.data, i - 1);
-        printf("Date:%s Email #%zu: From:%s Subject: %s\n", list->items[i-1].date,i,list->items[i-1].from, list->items[i - 1].subject);
+        parse_mail_list(list, ctx.data, i - 1);
+        printf("[Email #%zu] Date: %s From: %s Subject: %s has_signature: %d\n", 
+               i, list->items[i - 1].date, list->items[i - 1].from, 
+               list->items[i - 1].subject, list->items[i - 1].has_signature);
 
         free(ctx.data);
     }
 
+    // 提供用户选择邮件查看
+    printf("\n请给出你想阅读的邮件序号(1-%zu, 输入0则退出)：", list->count);
+    int mail_num;
+    scanf("%d", &mail_num);
+
+    if (mail_num == 0) {
+        return list;
+    } else if (mail_num >= 1 && mail_num <= list->count) {
+        // 显示所选邮件的详细信息
+        printf("Email #%u: Date: %s From: %s Subject: %s\n", 
+               mail_num, 
+               list->items[mail_num - 1].date, 
+               list->items[mail_num - 1].from, 
+               list->items[mail_num - 1].subject);
+        if (list->items[mail_num - 1].has_signature) {
+        printf("Content: %s\n", list->items[mail_num - 1].body);
+       
+        if (list->items[mail_num - 1].has_signature) {
+            printf("Signature: %s\n", list->items[mail_num - 1].signature_file);
+            
+            // Base64解码签名并进行验证
+            size_t decoded_len = 0;
+            long sig_size = strlen(list->items[mail_num - 1].signature_file);
+            unsigned char* decoded_signature = malloc(sig_size * 2);  // 预留足够的空间
+
+            // 调用 base64_decode 函数解码签名
+            int ret = base64_decode(list->items[mail_num - 1].signature_file, 
+                                    strlen(list->items[mail_num - 1].signature_file), 
+                                    decoded_signature, &decoded_len);
+
+            if (ret != 1) {
+                printf("签名Base64解码失败！错误代码：%d\n", ret);
+            } 
+            else {
+                // 打印解码后的签名（调试用）
+                printf("Decoded signature: ");
+                for (size_t i = 0; i < decoded_len; ++i) {
+                    printf("%02x", decoded_signature[i]);  // 以十六进制输出解码后的签名
+                }
+                printf("\n");
+
+                    if (!verify_signature(list->items[mail_num - 1].body, 
+                                        decoded_signature, 
+                                        decoded_len, 
+                                        "public.pem")) {
+                        printf("签名验证失败！消息可能被篡改。\n");
+                    }
+                    else {
+                        printf("验签成功！消息真实\n");
+                    }
+                }
+                free(decoded_signature);  // 释放解码后的签名内存
+            }
+        }
+        else {
+            printf("没有签名,不进行验签\n");
+        }
+    }
     return list;
 }
 
@@ -242,4 +394,52 @@ void free_mail_content(mail_content_t* content) {
     if (content->signature_file)
         free((void*)content->signature_file);
     free(content);
+}
+
+// 解析特定邮件
+int parse_mail(const mail_config_t* config, int mail_index) {
+    // 假设邮件列表已经获取
+    mail_list_t* list = receive_mail_list(config);
+    if (!list || mail_index < 1 || mail_index > list->count) {
+        printf("无效的邮件编号！\n");
+        return 0;
+    }
+
+    // 获取邮件数据
+    receive_ctx_t ctx = { NULL, 0 };
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        printf("CURL init failed!\n");
+        return 0;
+    }
+
+    char url[256];
+    snprintf(url, sizeof(url), "%s://%s:%d/%d",
+             config->pop3_use_ssl ? "pop3s" : "pop3",
+             config->pop3_server, config->pop3_port, mail_index);
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_USERNAME, config->username);
+    curl_easy_setopt(curl, CURLOPT_PASSWORD, config->password);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
+
+    CURLcode res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+        printf("curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+        curl_easy_cleanup(curl);
+        free(ctx.data);
+        free_mail_list(list);
+        return 0;
+    } else {
+        // 解析邮件内容
+        mail_content_t* content = parse_mail_content(ctx.data);
+        printf("邮件内容: %s\n", content->body);
+        free_mail_content(content);
+    }
+
+    curl_easy_cleanup(curl);
+    free(ctx.data);
+    free_mail_list(list);
+    return 1;
 } 

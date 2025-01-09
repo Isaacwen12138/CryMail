@@ -18,3 +18,5 @@ temp_*
 .idea/
 *.swp
 *~ 
+
+.cache/

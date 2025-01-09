@@ -55,11 +55,18 @@ make
 ./crymail
 ```
 
+5. 选择解析特定邮件：
+   - 在接收邮件页面中输入要解析的邮件编号。
+
 ## 支持的邮件服务器
 
-- Gmail: smtp.gmail.com:587
-- QQ邮箱: smtp.qq.com:587
+### 发送邮件
 - 163邮箱: smtp.163.com:25
+- 126邮箱: smtp.126.com:465
+
+### 接收邮件
+- 163邮箱: pop.163.com:995
+- 126邮箱: pop.126.com:110
 
 ## 注意事项
 
@@ -67,6 +74,19 @@ make
 2. 使用Gmail需要开启"应用专用密码"
 3. 使用QQ邮箱需要开启"POP3/SMTP服务"并使用授权码
 4. 使用163邮箱需要开启"SMTP服务"并使用授权密码
+5. 使用126邮箱需要开启"SMTP服务"并使用授权码
+
+## 推荐配置
+```
+smtp_server=smtp.126.com
+username=xxxx@126.com
+password=xxxxx
+port=465
+use_ssl=1
+pop3_server=pop.126.com
+pop3_port=110
+pop3_use_ssl=0
+```
 
 ## 许可证
 

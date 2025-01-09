@@ -33,6 +33,8 @@ typedef struct {
     char* date;
     int has_signature;  // 是否包含数字签名
     char* body;
+    char* signature_file;
+    size_t signature_file_len; 
 } mail_item_t;
 
 // 邮件列表结构体
@@ -70,5 +72,8 @@ int save_mail_config(const mail_config_t* config, const char* config_file);
 
 // 加载邮件配置
 int load_mail_config(mail_config_t* config, const char* config_file);
+
+// 解析邮件
+int parse_mail(const mail_config_t* config, int mail_index);
 
 #endif // MAIL_H 

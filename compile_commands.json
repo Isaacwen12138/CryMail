@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-I/usr/include/openssl",
+      "-c",
+      "-o",
+      "build/mail_receive.o",
+      "src/mail_receive.c"
+    ],
+    "directory": "/home/whu/os/crypto/CryMail",
+    "file": "/home/whu/os/crypto/CryMail/src/mail_receive.c",
+    "output": "/home/whu/os/crypto/CryMail/build/mail_receive.o"
+  }
+]

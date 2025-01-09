@@ -19,6 +19,7 @@ void print_usage() {
     printf("4. 验证签名: ./crymail -v <消息> <签名文件>\n");
     printf("5. 配置邮件: ./crymail -c\n");
     printf("6. 发送签名邮件: ./crymail -m <收件人> <主题> <消息>\n");
+    printf("7. 接收邮件: ./crymail -l\n");
 }
 
 // 配置邮件设置
@@ -215,7 +216,7 @@ int main(int argc, char *argv[]) {
     else if(strcmp(argv[1],"-l")==0){
          mail_init();
 
-         printf("test\n");
+        // printf("test\n");
 
         // 加载邮件配置
         mail_config_t config;
@@ -230,21 +231,8 @@ int main(int argc, char *argv[]) {
             free(list);
             return 1;
         }
-        for(int i = 0;i < list->count;i++)
-        {
-           printf("Email #%zu: Date:%s  From:%s Subject: %s\n", i+1,list->items[i].date,list->items[i].from, list->items[i].subject);
-        }
-        printf("请给出你想阅读的邮件序号(1-8,输入0则退出)：");
-        int mail_num;
-        scanf("%d",&mail_num);
-        if(mail_num == 0)
-        {
-            return 1;
-        }
-        else if(mail_num>=1&&mail_num<=8)
-        {
-            printf("Email #%zu: Date:%s  From:%s Subject: %s\ncontent:%s\n",mail_num,list->items[mail_num-1].date,list->items[mail_num-1].from, list->items[mail_num-1].subject,list->items[mail_num-1].body);
-        }
+
+        return 1;
     }
     else {
         print_usage();
