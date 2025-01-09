@@ -33,6 +33,8 @@ typedef struct {
     char* date;
     int has_signature;  // 是否包含数字签名
     char* body;
+    char* signature_file;
+    size_t signature_file_len; 
 } mail_item_t;
 
 // 邮件列表结构体
